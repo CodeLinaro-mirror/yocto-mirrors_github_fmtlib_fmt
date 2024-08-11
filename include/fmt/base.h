@@ -926,9 +926,8 @@ template <typename T> class buffer {
 
   /// Appends data to the end of the buffer.
   template <typename U>
-// Workaround for Visual Studio 2019 to fix error C2893: Failed to specialize
-// function template 'void fmt::v11::detail::buffer<T>::append(const U *,const
-// U *)'
+// Workaround for MSVC2019 to fix error C2893: Failed to specialize function
+// template 'void fmt::v11::detail::buffer<T>::append(const U *,const U *)'.
 #if !FMT_MSC_VERSION || FMT_MSC_VERSION >= 1930
   FMT_CONSTEXPR20
 #endif
@@ -2880,8 +2879,7 @@ inline void report_truncation(bool truncated) {
   if (truncated) report_error("output is truncated");
 }
 
-// Use vformat_args and avoid type_identity to keep symbols short and workaround
-// a GCC <= 4.8 bug.
+// Use vformat_args and avoid type_identity to keep symbols short.
 template <typename Char = char> struct vformat_args {
   using type = basic_format_args<buffered_context<Char>>;
 };

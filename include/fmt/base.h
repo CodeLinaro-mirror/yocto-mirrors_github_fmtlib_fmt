@@ -2238,8 +2238,15 @@ template <typename Context> class value {
   }
   FMT_ALWAYS_INLINE value(const void* val) : pointer(val) {}
 
-  template <typename T>
-  FMT_CONSTEXPR20 FMT_ALWAYS_INLINE value(T&& val, custom_tag = {}) {
+  template <typename T,
+            FMT_ENABLE_IF(!std::is_same<mapped_t<T, char_type>, T>::value)>
+  FMT_CONSTEXPR20 FMT_ALWAYS_INLINE value(T&& val) {
+    *this = arg_mapper<typename Context::char_type>::map(val);
+  }
+
+  template <typename T,
+            FMT_ENABLE_IF(std::is_same<mapped_t<T, char_type>, T>::value)>
+  FMT_CONSTEXPR20 FMT_ALWAYS_INLINE value(T&& val) {
     // Use enum instead of constexpr because the latter may generate code.
     enum { formattable_char = !std::is_same<T, unformattable_char>::value };
     static_assert(formattable_char, "mixing character types is disallowed");
@@ -2374,8 +2381,7 @@ struct named_arg_store {
 
   template <typename... T>
   FMT_CONSTEXPR FMT_ALWAYS_INLINE named_arg_store(T&... values)
-      : args{{named_args, NUM_NAMED_ARGS},
-             arg_mapper<typename Context::char_type>::map(values)...} {
+      : args{{named_args, NUM_NAMED_ARGS}, values...} {
     int arg_index = 0, named_arg_index = 0;
     FMT_APPLY_VARIADIC(
         init_named_arg(named_args, arg_index, named_arg_index, values));
@@ -2636,6 +2642,10 @@ template <typename Context> class basic_format_args {
     return static_cast<detail::type>((desc_ >> shift) & mask);
   }
 
+  template <size_t NUM_ARGS, size_t NUM_NAMED_ARGS, unsigned long long DESC>
+  using store =
+      detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC>;
+
  public:
   using format_arg = basic_format_arg<Context>;
 
@@ -2646,33 +2656,26 @@ template <typename Context> class basic_format_args {
             FMT_ENABLE_IF(NUM_ARGS <= detail::max_packed_args &&
                           NUM_NAMED_ARGS == 0)>
   constexpr FMT_ALWAYS_INLINE basic_format_args(
-      const detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC>&
-          store)
-      : desc_(DESC), values_(store.args) {}
+      const store<NUM_ARGS, NUM_NAMED_ARGS, DESC>& s)
+      : desc_(DESC), values_(s.args) {}
 
   template <size_t NUM_ARGS, size_t NUM_NAMED_ARGS, unsigned long long DESC,
             FMT_ENABLE_IF(NUM_ARGS <= detail::max_packed_args &&
                           NUM_NAMED_ARGS != 0)>
-  constexpr FMT_ALWAYS_INLINE basic_format_args(
-      const detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC>&
-          store)
-      : desc_(DESC), values_(store.args.args + 1) {}
+  constexpr basic_format_args(const store<NUM_ARGS, NUM_NAMED_ARGS, DESC>& s)
+      : desc_(DESC | detail::has_named_args_bit), values_(s.args.args + 1) {}
 
   template <size_t NUM_ARGS, size_t NUM_NAMED_ARGS, unsigned long long DESC,
             FMT_ENABLE_IF(NUM_ARGS > detail::max_packed_args &&
                           NUM_NAMED_ARGS == 0)>
-  constexpr basic_format_args(
-      const detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC>&
-          store)
-      : desc_(DESC), args_(store.args + (NUM_NAMED_ARGS != 0 ? 1 : 0)) {}
+  constexpr basic_format_args(const store<NUM_ARGS, NUM_NAMED_ARGS, DESC>& s)
+      : desc_(DESC), args_(s.args) {}
 
   template <size_t NUM_ARGS, size_t NUM_NAMED_ARGS, unsigned long long DESC,
             FMT_ENABLE_IF(NUM_ARGS > detail::max_packed_args &&
                           NUM_NAMED_ARGS != 0)>
-  constexpr basic_format_args(
-      const detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC>&
-          store)
-      : desc_(DESC), args_(store.args.args + 1) {}
+  constexpr basic_format_args(const store<NUM_ARGS, NUM_NAMED_ARGS, DESC>& s)
+      : desc_(DESC | detail::has_named_args_bit), args_(s.args.args + 1) {}
 
   /// Constructs a `basic_format_args` object from a dynamic list of arguments.
   constexpr basic_format_args(const format_arg* args, int count,
@@ -2880,26 +2883,19 @@ struct formatter<T, Char,
 template <typename Context = context, typename... T,
           size_t NUM_ARGS = sizeof...(T),
           size_t NUM_NAMED_ARGS = detail::count_named_args<T...>(),
-          unsigned long long DESC = detail::make_descriptor<Context, T...>(),
-          FMT_ENABLE_IF(NUM_NAMED_ARGS == 0)>
+          unsigned long long DESC = detail::make_descriptor<Context, T...>()>
 constexpr FMT_ALWAYS_INLINE auto make_format_args(T&... args)
-    -> detail::format_arg_store<Context, NUM_ARGS, 0, DESC> {
+    -> detail::format_arg_store<Context, NUM_ARGS, NUM_NAMED_ARGS, DESC> {
+  // Suppress a warning for types with operators that convert to detail::value.
   FMT_GCC_PRAGMA(GCC diagnostic ignored "-Wconversion")
-  return {{detail::arg_mapper<typename Context::char_type>::map(args)...}};
-}
-
-#ifndef FMT_DOC
-template <typename Context = context, typename... T,
-          size_t NUM_NAMED_ARGS = detail::count_named_args<T...>(),
-          unsigned long long DESC =
-              detail::make_descriptor<Context, T...>() |
-              static_cast<unsigned long long>(detail::has_named_args_bit),
-          FMT_ENABLE_IF(NUM_NAMED_ARGS != 0)>
-constexpr auto make_format_args(T&... args)
-    -> detail::format_arg_store<Context, sizeof...(T), NUM_NAMED_ARGS, DESC> {
   return {{args...}};
 }
-#endif
+
+template <typename... T>
+using vargs =
+    detail::format_arg_store<context, sizeof...(T),
+                             detail::count_named_args<T...>(),
+                             detail::make_descriptor<context, T...>()>;
 
 /**
  * Returns a named argument to be used in a formatting function.
@@ -3024,7 +3020,7 @@ FMT_API void vprintln(FILE* f, string_view fmt, format_args args);
  */
 template <typename... T>
 FMT_INLINE void print(format_string<T...> fmt, T&&... args) {
-  const auto& vargs = fmt::make_format_args(args...);
+  fmt::vargs<T...> vargs = {{args...}};
   if (!FMT_USE_UTF8) return detail::vprint_mojibake(stdout, fmt, vargs, false);
   return detail::is_locking<T...>() ? vprint_buffered(stdout, fmt, vargs)
                                     : vprint(fmt, vargs);

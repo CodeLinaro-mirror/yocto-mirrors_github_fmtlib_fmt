@@ -4331,7 +4331,7 @@ FMT_API auto vformat(string_view fmt, format_args args) -> std::string;
 template <typename... T>
 FMT_NODISCARD FMT_INLINE auto format(format_string<T...> fmt, T&&... args)
     -> std::string {
-  return vformat(fmt, fmt::make_format_args(args...));
+  return vformat(fmt, fmt::vargs<T...>{{args...}});
 }
 
 template <typename Locale, FMT_ENABLE_IF(detail::is_locale<Locale>::value)>

@@ -2521,7 +2521,7 @@ TEST(format_test, writer) {
 TEST(format_test, bitint) {
   using fmt::detail::bitint;
   using fmt::detail::ubitint;
-  
+
   EXPECT_EQ(fmt::format("{}", ubitint<3>(7)), "7");
   EXPECT_EQ(fmt::format("{}", bitint<7>()), "0");
 

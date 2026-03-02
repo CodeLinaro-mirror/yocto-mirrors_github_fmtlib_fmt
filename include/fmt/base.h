@@ -1030,13 +1030,7 @@ struct is_view : std::false_type {};
 template <typename T>
 struct is_view<T, bool_constant<sizeof(T) != 0>> : std::is_base_of<view, T> {};
 
-template <typename T, typename Char> struct named_arg;
-template <typename T> struct is_named_arg : std::false_type {};
-template <typename T> struct is_static_named_arg : std::false_type {};
-
-template <typename T, typename Char>
-struct is_named_arg<named_arg<T, Char>> : std::true_type {};
-
+// DEPRECATED! named_arg will be moved to the fmt namespace.
 template <typename T, typename Char = char> struct named_arg : view {
   const Char* name;
   const T& value;
@@ -1044,6 +1038,11 @@ template <typename T, typename Char = char> struct named_arg : view {
   named_arg(const Char* n, const T& v) : name(n), value(v) {}
   static_assert(!is_named_arg<T>::value, "nested named arguments");
 };
+
+template <typename T> struct is_named_arg : std::false_type {};
+template <typename T, typename Char>
+struct is_named_arg<named_arg<T, Char>> : std::true_type {};
+template <typename T> struct is_static_named_arg : std::false_type {};
 
 template <bool B = false> constexpr auto count() -> int { return B ? 1 : 0; }
 template <bool B1, bool B2, bool... Tail> constexpr auto count() -> int {
